@@ -1,28 +1,37 @@
 require("dotenv").config();
 const express = require("express");
 const app = express();
-const PORT = process.env.PORT || 8000;
-const cors = require("cors");
-const socketIo = require("socket.io");
-app.use(cors());
 
+const socketIo = require("socket.io");
+const cors = require("cors");
+const socketHandler = require("./socket");
+const userRoutes = require("./routes/user.routes");
+const connectDb = require("./config/dbConfig");
+const PORT = process.env.PORT || 8000;
+app.use(express.json());
+app.use(cors());
+app.use("/user", userRoutes);
 app.get("/", (req, res) => {
   res.status(200).send("HEllO");
 });
+connectDb()
+  .then(() => {
+    const server = app.listen(PORT, () => {
+      console.log(`Server is running on port: ${PORT}`);
+    });
 
-const server = app.listen(PORT, () => {
-  console.log(`server is running on ${PORT}`);
-});
+    const io = socketIo(server, {
+      cors: {
+        origin: process.env.FRONTEND,
+        methods: ["GET", "POST"],
+      },
+    });
 
-const io = socketIo(server, {
-  cors: {
-    origin: process.env.FRONTED,
-    methods: ["GET", "POST"],
-  },
-});
-io.on("connecting", () => console.log("Connecting..."));
-io.on("connection", (socket) => {
-  console.log("connected!", socket.id);
-  socket.emit("onboard", "Welcom new user!");
-  socket.on("disconnect", () => console.log("Client disconnected"));
+    socketHandler(io);
+  })
+  .catch((err) => {
+    console.error("DB connection failed.", err);
+  });
+app.use("/{*any}", (req, res) => {
+  res.status(404).send("Page Not Found!!");
 });
