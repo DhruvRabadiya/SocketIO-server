@@ -25,6 +25,7 @@ async function userLogin(req, res) {
     const hashPass = userExists.password;
     const payload = {
       id: userExists._id,
+      username: userExists.username,
       email: userExists.email,
     };
     const { token } = await loginToken(password, hashPass, payload);
@@ -68,4 +69,32 @@ async function userRegister(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
-module.exports = { userLogin, userRegister };
+async function getAllusers(req, res) {
+  const loginUserId = req.user.id;
+  try {
+    const getAllusers = await User.find(
+      { _id: { $ne: loginUserId } },
+      { password: 0, addedAt: 0, modifiedAt: 0 }
+    );
+    res.status(200).json({ getAllusers });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function getUserById(req, res) {
+  const userId = req.params.id;
+  try {
+    const user = await User.find(
+      { _id: userId },
+      { password: 0, addedAt: 0, modifiedAt: 0 }
+    );
+    res.status(200).json({ user });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+module.exports = { userLogin, userRegister, getAllusers, getUserById };

@@ -10,6 +10,13 @@ async function socketHandler(io) {
     socket.on("chat", (msg) => {
       socket.broadcast.emit("chat", msg);
     });
+    socket.on("join_private_chat", (data) => {
+      const { roomName } = data;
+      socket.join(roomName);
+    });
+    socket.on("send_private_message", (messageObj) => {
+      socket.in(messageObj.roomName).emit("private_message", messageObj);
+    });
     socket.on("disconnect", () => {
       console.log("Client disconnected");
     });

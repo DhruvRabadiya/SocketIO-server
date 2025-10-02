@@ -12,3 +12,4 @@ async function authCheck(req, res, next) {
     res.status(500).json({ error: error.message });
   }
 }
+module.exports = authCheck;
