@@ -1,3 +1,5 @@
+const { createRoom, messages } = require("./controllers/user.controller");
+
 async function socketHandler(io) {
   io.on("connecting", () => console.log("Connecting..."));
   io.on("connection", (socket) => {
@@ -10,12 +12,14 @@ async function socketHandler(io) {
     socket.on("chat", (msg) => {
       socket.broadcast.emit("chat", msg);
     });
-    socket.on("join_private_chat", (data) => {
+    socket.on("join_private_chat", async function (data) {
       const { roomName } = data;
       socket.join(roomName);
+      await createRoom(roomName);
     });
-    socket.on("send_private_message", (messageObj) => {
+    socket.on("send_private_message", async (messageObj) => {
       socket.in(messageObj.roomName).emit("private_message", messageObj);
+      await messages(messageObj);
     });
     socket.on("disconnect", () => {
       console.log("Client disconnected");

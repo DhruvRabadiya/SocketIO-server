@@ -1,5 +1,8 @@
+const Rooms = require("../models/room");
 const User = require("../models/users");
+const mongoose = require("mongoose");
 const { loginToken, registerToken } = require("../services/getToken.service");
+const Messages = require("../models/messages");
 
 async function userLogin(req, res) {
   if (!req.body) {
@@ -97,4 +100,64 @@ async function getUserById(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
-module.exports = { userLogin, userRegister, getAllusers, getUserById };
+async function createRoom(roomName) {
+  const [userId1, userId2] = roomName.split("-");
+  console.log(userId1, typeof userId1);
+
+  try {
+    const doc = {
+      roomName: roomName,
+      participants: [
+        { userId: new mongoose.Types.ObjectId(userId1) },
+        { userId: new mongoose.Types.ObjectId(userId2) },
+      ],
+    };
+    const roomExists = await Rooms.findOne({ roomName: roomName }).populate(
+      "participants.userId",
+      "username"
+    );
+
+    if (roomExists) {
+      console.log("Room Exists!!!");
+    } else {
+      await Rooms.create(doc);
+    }
+  } catch (error) {
+    throw Error(error);
+  }
+}
+async function messages(msg) {
+  try {
+    const roomId = await Rooms.findOne({ roomName: msg.roomName });
+    const messageObj = {
+      conversationId: roomId._id,
+      senderId: new mongoose.Types.ObjectId(msg.senderId),
+      senderUsername: msg.senderUsername,
+      text: msg.text,
+    };
+    await Messages.create(messageObj);
+  } catch (error) {
+    throw Error(error);
+  }
+}
+async function getAllMessageOfRoom(req, res) {
+  const roomName = req.params.name;
+  try {
+    const roomId = await Rooms.findOne({ roomName: roomName });
+    const messages = await Messages.find({ conversationId: roomId });
+    res.status(200).json(messages);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+module.exports = {
+  userLogin,
+  userRegister,
+  getAllusers,
+  getUserById,
+  createRoom,
+  messages,
+  getAllMessageOfRoom,
+};
