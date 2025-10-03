@@ -17,6 +17,18 @@ const messagesSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    tempId: {
+      type: String,
+      unique: true,
+    },
   },
   {
     timestamps: {

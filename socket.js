@@ -15,11 +15,57 @@ async function socketHandler(io) {
     socket.on("join_private_chat", async function (data) {
       const { roomName } = data;
       socket.join(roomName);
-      await createRoom(roomName);
+      try {
+        await createRoom(roomName);
+        socket.emit("room_created", `Joined room ${roomName}`);
+      } catch (error) {
+        console.error(`Error creating room: ${error.message}`);
+        socket.emit("error", {
+          message: "Failed to create room. Please try again.",
+        });
+      }
     });
+
     socket.on("send_private_message", async (messageObj) => {
-      socket.in(messageObj.roomName).emit("private_message", messageObj);
-      await messages(messageObj);
+      try {
+        const savedMessage = await messages(messageObj);
+        const finalMessage = {
+          ...savedMessage.toObject(),
+          tempId: messageObj.tempId,
+        };
+        io.in(messageObj.roomName).emit("private_message", finalMessage);
+      } catch (error) {
+        console.error(`Error sending message: ${error.message}`);
+        socket.emit("error", {
+          message: "Failed to send message. Please try again.",
+        });
+      }
+    });
+
+    socket.on("delete_message", async (messageObj) => {
+      const { messageId, roomName } = messageObj;
+      try {
+        socket.in(roomName).emit("message_deleted", { messageId });
+      } catch (error) {
+        console.error(`Error deleting message: ${error.message}`);
+        socket.emit("error", {
+          message: "Failed to delete message. Please try again.",
+        });
+      }
+    });
+
+    socket.on("edit_message", async (messageObj) => {
+      const { messageId, newText, roomName } = messageObj;
+      try {
+        socket
+          .in(roomName)
+          .emit("message_edited", { messageId, newText, isEdited: true });
+      } catch (error) {
+        console.error(`Error editing message: ${error.message}`);
+        socket.emit("error", {
+          message: "Failed to edit message. Please try again.",
+        });
+      }
     });
     socket.on("disconnect", () => {
       console.log("Client disconnected");

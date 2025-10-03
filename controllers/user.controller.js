@@ -102,7 +102,6 @@ async function getUserById(req, res) {
 }
 async function createRoom(roomName) {
   const [userId1, userId2] = roomName.split("-");
-  console.log(userId1, typeof userId1);
 
   try {
     const doc = {
@@ -134,8 +133,10 @@ async function messages(msg) {
       senderId: new mongoose.Types.ObjectId(msg.senderId),
       senderUsername: msg.senderUsername,
       text: msg.text,
+      tempId: msg.tempId,
     };
-    await Messages.create(messageObj);
+    const savedMessage = await Messages.create(messageObj);
+    return savedMessage;
   } catch (error) {
     throw Error(error);
   }
@@ -143,9 +144,41 @@ async function messages(msg) {
 async function getAllMessageOfRoom(req, res) {
   const roomName = req.params.name;
   try {
-    const roomId = await Rooms.findOne({ roomName: roomName });
-    const messages = await Messages.find({ conversationId: roomId });
+    const room = await Rooms.findOne({ roomName: roomName });
+    if (!room) {
+      return res.status(200).json([]);
+    }
+    const messages = await Messages.find({ conversationId: room._id });
     res.status(200).json(messages);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function deleteMessage(req, res) {
+  const messageId = req.params.messageId;
+  try {
+    await Messages.findOneAndUpdate(
+      { _id: messageId },
+      { isDeleted: true, text: null }
+    );
+    res.status(200).json({ data: "Message deleted!" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function editMessage(req, res) {
+  const messageId = req.params.messageId;
+  const editedText = req.body.text;
+  try {
+    await Messages.findOneAndUpdate(
+      { _id: messageId },
+      { text: editedText, isEdited: true }
+    );
+    res.status(200).json({ data: "Message Edited." });
   } catch (error) {
     res
       .status(500)
@@ -160,4 +193,6 @@ module.exports = {
   createRoom,
   messages,
   getAllMessageOfRoom,
+  deleteMessage,
+  editMessage,
 };
