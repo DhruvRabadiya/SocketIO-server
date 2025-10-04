@@ -12,6 +12,7 @@ const {
   sendMessage,
   getAllGroupMessage,
   getGroupById,
+  addUserInGroupChat,
 } = require("../controllers/user.controller");
 const authCheck = require("../middlewares/authCheck");
 const router = express.Router();
@@ -25,6 +26,7 @@ router.post("/messages", authCheck, sendMessage);
 router.get("/roomname/:name", authCheck, getAllMessageOfRoom);
 router.get("/group/messages/:groupId", authCheck, getAllGroupMessage);
 router.get("/group/details/:groupId", authCheck, getGroupById);
+router.patch("/group/add/:groupId", authCheck, addUserInGroupChat);
 router.get("/:id", authCheck, getUserById);
 router.patch("/delete/:messageId", authCheck, deleteMessage);
 router.patch("/edit/:messageId", authCheck, editMessage);
