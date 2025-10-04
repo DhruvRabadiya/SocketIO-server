@@ -3,6 +3,7 @@ const User = require("../models/users");
 const mongoose = require("mongoose");
 const { loginToken, registerToken } = require("../services/getToken.service");
 const Messages = require("../models/messages");
+const Groups = require("../models/group");
 
 async function userLogin(req, res) {
   if (!req.body) {
@@ -125,20 +126,46 @@ async function createRoom(roomName) {
     throw Error(error);
   }
 }
-async function messages(msg) {
+// async function messages(msg) {
+//   try {
+//     const roomId = await Rooms.findOne({ roomName: msg.roomName });
+//     const messageObj = {
+//       conversationId: roomId._id,
+//       senderId: new mongoose.Types.ObjectId(msg.senderId),
+//       senderUsername: msg.senderUsername,
+//       text: msg.text,
+//       tempId: msg.tempId,
+//     };
+//     const savedMessage = await Messages.create(messageObj);
+//     return savedMessage;
+//   } catch (error) {
+//     throw Error(error);
+//   }
+// }
+async function sendMessage(req, res) {
   try {
-    const roomId = await Rooms.findOne({ roomName: msg.roomName });
-    const messageObj = {
-      conversationId: roomId._id,
-      senderId: new mongoose.Types.ObjectId(msg.senderId),
-      senderUsername: msg.senderUsername,
-      text: msg.text,
-      tempId: msg.tempId,
-    };
-    const savedMessage = await Messages.create(messageObj);
-    return savedMessage;
+    const senderId = req.user.id;
+    const { roomName, isGroupChat } = req.body;
+    let conversationId;
+    if (isGroupChat) {
+      const group = await Groups.findById(roomName);
+      conversationId = group._id;
+    } else {
+      const room = await Rooms.findOne({ roomName: roomName });
+      conversationId = room._id;
+    }
+
+    if (!conversationId) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const messageData = { ...req.body, senderId, conversationId };
+    const savedMessage = await Messages.create(messageData);
+    res.status(201).json({ savedMessage });
   } catch (error) {
-    throw Error(error);
+    res
+      .status(500)
+      .json({ message: "Failed to send message", error: error.message });
   }
 }
 async function getAllMessageOfRoom(req, res) {
@@ -185,14 +212,80 @@ async function editMessage(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+async function createGroup(req, res) {
+  if (!req.body) {
+    return res.status(400).json({ data: "Body undefined." });
+  }
+  console.log(req.body);
+  const { groupName, groupId, participants } = req.body;
+  const createdBy = req.user.id;
+  const groupObj = {
+    groupName: groupName,
+    groupId: groupId,
+    participants: participants,
+    createdBy: createdBy,
+  };
+  await Groups.create(groupObj);
+  res.status(200).json({ data: `${groupName} created successfully.` });
+  try {
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function getGroups(req, res) {
+  const userId = req.user.id;
+  try {
+    if (!userId) {
+      return res.status(400).json({ data: "User not found." });
+    }
+    const groups = await Groups.find({ participants: userId });
+    res.status(200).json({ groups });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function getAllGroupMessage(req, res) {
+  const groupId = req.params.groupId;
+  try {
+    const messages = await Messages.find({ conversationId: groupId });
+    res.status(200).json(messages);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
+async function getGroupById(req, res) {
+  const groupId = req.params.groupId;
+  try {
+    const group = await Groups.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ message: "Group not found." });
+    }
+    res.status(200).json({ group });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Some error occured", error: error.message });
+  }
+}
 module.exports = {
   userLogin,
   userRegister,
   getAllusers,
   getUserById,
   createRoom,
-  messages,
+  // messages,
   getAllMessageOfRoom,
   deleteMessage,
   editMessage,
+  createGroup,
+  getGroups,
+  sendMessage,
+  getAllGroupMessage,
+  getGroupById,
 };

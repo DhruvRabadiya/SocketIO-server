@@ -1,6 +1,15 @@
-const { createRoom, messages } = require("./controllers/user.controller");
-
+const { createRoom } = require("./controllers/user.controller");
+const jwt = require("jsonwebtoken");
 async function socketHandler(io) {
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error("Authentication error"));
+    jwt.verify(token, process.env.PRIVATE_KEY, (err, decoded) => {
+      if (err) return next(new Error("Invalid token"));
+      socket.user = decoded;
+      next();
+    });
+  });
   io.on("connecting", () => console.log("Connecting..."));
   io.on("connection", (socket) => {
     console.log("connected!", socket.id);
@@ -28,12 +37,7 @@ async function socketHandler(io) {
 
     socket.on("send_private_message", async (messageObj) => {
       try {
-        const savedMessage = await messages(messageObj);
-        const finalMessage = {
-          ...savedMessage.toObject(),
-          tempId: messageObj.tempId,
-        };
-        io.in(messageObj.roomName).emit("private_message", finalMessage);
+        socket.to(messageObj.roomName).emit("private_message", messageObj);
       } catch (error) {
         console.error(`Error sending message: ${error.message}`);
         socket.emit("error", {
@@ -45,7 +49,7 @@ async function socketHandler(io) {
     socket.on("delete_message", async (messageObj) => {
       const { messageId, roomName } = messageObj;
       try {
-        socket.in(roomName).emit("message_deleted", { messageId });
+        socket.to(roomName).emit("message_deleted", { messageId });
       } catch (error) {
         console.error(`Error deleting message: ${error.message}`);
         socket.emit("error", {
@@ -58,7 +62,7 @@ async function socketHandler(io) {
       const { messageId, newText, roomName } = messageObj;
       try {
         socket
-          .in(roomName)
+          .to(roomName)
           .emit("message_edited", { messageId, newText, isEdited: true });
       } catch (error) {
         console.error(`Error editing message: ${error.message}`);
