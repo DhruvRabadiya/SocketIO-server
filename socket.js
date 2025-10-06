@@ -1,6 +1,7 @@
 const { createRoom } = require("./controllers/user.controller");
 const jwt = require("jsonwebtoken");
 async function socketHandler(io) {
+  const onlineUsers = new Map();
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error("Authentication error"));
@@ -12,7 +13,10 @@ async function socketHandler(io) {
   });
   io.on("connecting", () => console.log("Connecting..."));
   io.on("connection", (socket) => {
-    console.log("connected!", socket.id);
+    console.log(`connected! ${socket.id}, User: ${socket.user.username}`);
+    onlineUsers.set(socket.user.id, socket.id);
+
+    io.emit("online_users", Array.from(onlineUsers.keys()));
     socket.emit("onboard", "Welcom new user!");
 
     socket.on("setUsername", (username) => {
@@ -71,8 +75,18 @@ async function socketHandler(io) {
         });
       }
     });
+    socket.on("leave_room", (data) => {
+      socket.leave(data.roomName);
+      console.log(`User: ${socket.user.username}, left room: ${data.roomName}`);
+    });
     socket.on("disconnect", () => {
-      console.log("Client disconnected");
+      console.log(
+        `Client disconnected: ${socket.user.username} (${socket.id})`
+      );
+
+      onlineUsers.delete(socket.user.id);
+
+      io.emit("online_users", Array.from(onlineUsers.keys()));
     });
   });
 }
