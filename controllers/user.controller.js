@@ -216,7 +216,6 @@ async function createGroup(req, res) {
   if (!req.body) {
     return res.status(400).json({ data: "Body undefined." });
   }
-  console.log(req.body);
   const { groupName, groupId, participants } = req.body;
   const createdBy = req.user.id;
   const groupObj = {

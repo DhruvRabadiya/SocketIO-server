@@ -75,6 +75,16 @@ async function socketHandler(io) {
         });
       }
     });
+    socket.on("start_typing", (data) => {
+      const { roomName } = data;
+      const username = socket.user.username;
+      socket.to(roomName).emit("user_is_typing", { username });
+    });
+    socket.on("stop_typing", (data) => {
+      const { roomName } = data;
+      const username = socket.user.username;
+      socket.to(roomName).emit("user_stopped_typing", { username });
+    });
     socket.on("leave_room", (data) => {
       socket.leave(data.roomName);
       console.log(`User: ${socket.user.username}, left room: ${data.roomName}`);
