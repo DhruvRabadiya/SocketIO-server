@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const { loginToken, registerToken } = require("../services/getToken.service");
 const Messages = require("../models/messages");
 const Groups = require("../models/group");
+const pagination = require("../utils/pagination");
 
 async function userLogin(req, res) {
   if (!req.body) {
@@ -170,13 +171,23 @@ async function sendMessage(req, res) {
 }
 async function getAllMessageOfRoom(req, res) {
   const roomName = req.params.name;
+  const pageNo = Number(req.query.pageNo);
+  const limitData = 12;
+
   try {
     const room = await Rooms.findOne({ roomName: roomName });
     if (!room) {
       return res.status(200).json([]);
     }
-    const messages = await Messages.find({ conversationId: room._id });
-    res.status(200).json(messages);
+    const pipeline = [
+      {
+        $match: {
+          conversationId: room._id,
+        },
+      },
+    ];
+    const data = await pagination(Messages, pipeline, pageNo, limitData);
+    res.status(200).json(data);
   } catch (error) {
     res
       .status(500)
@@ -249,9 +260,18 @@ async function getGroups(req, res) {
 }
 async function getAllGroupMessage(req, res) {
   const groupId = req.params.groupId;
+  const pageNo = Number(req.query.pageNo);
+  const limitData = 12;
   try {
-    const messages = await Messages.find({ conversationId: groupId });
-    res.status(200).json(messages);
+    const pipeline = [
+      {
+        $match: {
+          conversationId: new mongoose.Types.ObjectId(groupId),
+        },
+      },
+    ];
+    const data = await pagination(Messages, pipeline, pageNo, limitData);
+    res.status(200).json(data);
   } catch (error) {
     res
       .status(500)
