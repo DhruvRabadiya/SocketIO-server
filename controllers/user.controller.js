@@ -332,7 +332,6 @@ async function addUserInGroupChat(req, res) {
 async function editGroupName(req, res) {
   const groupId = req.params.groupId;
   const { groupName, tempId } = req.body;
-  console.log(req.body);
   try {
     const groupExists = await Groups.findOneAndUpdate(
       { _id: groupId },
@@ -360,7 +359,34 @@ async function editGroupName(req, res) {
     });
   }
 }
-
+async function leaveGroup(req, res) {
+  const groupId = req.params.groupId;
+ const { tempId } = req.body;
+  try {
+    const groupDetail = await Groups.findOneAndUpdate(
+      { _id: groupId },
+      { $pull: { participants: req.user.id } },
+      { new: true }
+    );
+    if (!groupDetail) {
+      return res.status(404).json({ data: "Group not found." });
+    }
+    const messageObj = {
+      conversationId: groupId,
+      senderId: req.user.id,
+      senderUsername: req.user.username,
+      text: `${req.user.username} has left the group.`,
+      tempId: tempId,
+    };
+    const newMessage = await Messages.create(messageObj);
+    res.status(200).json({ groupDetail, newMessage });
+  } catch (error) {
+    res.status(500).json({
+      message: "An error occurred while leaving the group.",
+      error: error.message,
+    });
+  }
+}
 module.exports = {
   userLogin,
   userRegister,
@@ -378,4 +404,5 @@ module.exports = {
   getGroupById,
   addUserInGroupChat,
   editGroupName,
+  leaveGroup,
 };

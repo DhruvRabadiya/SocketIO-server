@@ -96,6 +96,15 @@ async function socketHandler(io) {
         newMessage: newMessage,
       });
     });
+    socket.on("leave_group", (data) => {
+      const { groupId, newMessage, updatedGroup } = data;
+
+      socket.to(groupId).emit("member_left", {
+        groupId: groupId,
+        updatedGroup: updatedGroup,
+        newMessage: newMessage,
+      });
+    });
     socket.on("disconnect", () => {
       console.log(
         `Client disconnected: ${socket.user.username} (${socket.id})`
