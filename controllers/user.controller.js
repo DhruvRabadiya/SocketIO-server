@@ -185,6 +185,11 @@ async function getAllMessageOfRoom(req, res) {
           conversationId: room._id,
         },
       },
+      {
+        $sort: {
+          addedAt: -1,
+        },
+      },
     ];
     const data = await pagination(Messages, pipeline, pageNo, limitData);
     res.status(200).json(data);
@@ -269,6 +274,11 @@ async function getAllGroupMessage(req, res) {
           conversationId: new mongoose.Types.ObjectId(groupId),
         },
       },
+      {
+        $sort: {
+          addedAt: -1,
+        },
+      },
     ];
     const data = await pagination(Messages, pipeline, pageNo, limitData);
     res.status(200).json(data);
@@ -319,6 +329,38 @@ async function addUserInGroupChat(req, res) {
     });
   }
 }
+async function editGroupName(req, res) {
+  const groupId = req.params.groupId;
+  const { groupName, tempId } = req.body;
+  console.log(req.body);
+  try {
+    const groupExists = await Groups.findOneAndUpdate(
+      { _id: groupId },
+      { groupName: groupName },
+      { new: true }
+    );
+    if (!groupExists) {
+      return res.status(404).json({ data: "Group not found." });
+    }
+
+    const messageObj = {
+      conversationId: groupId,
+      senderId: req.user.id,
+      senderUsername: req.user.username,
+      text: `${req.user.username} change group name to ${groupName}`,
+      tempId: tempId,
+    };
+
+    const newMessage = await Messages.create(messageObj);
+    res.status(200).json({ groupExists, newMessage });
+  } catch (error) {
+    res.status(500).json({
+      message: "An error occurred while editing group name.",
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   userLogin,
   userRegister,
@@ -334,5 +376,6 @@ module.exports = {
   sendMessage,
   getAllGroupMessage,
   getGroupById,
-  addUserInGroupChat
+  addUserInGroupChat,
+  editGroupName,
 };

@@ -89,6 +89,14 @@ async function socketHandler(io) {
       socket.leave(data.roomName);
       console.log(`User: ${socket.user.username}, left room: ${data.roomName}`);
     });
+    socket.on("rename_group", (data) => {
+      const { groupId, updatedGroup, newMessage } = data;
+      io.emit("group_renamed", {
+        groupId: groupId,
+        updatedGroup: updatedGroup,
+        newMessage: newMessage,
+      });
+    });
     socket.on("disconnect", () => {
       console.log(
         `Client disconnected: ${socket.user.username} (${socket.id})`
