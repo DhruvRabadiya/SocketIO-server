@@ -91,8 +91,7 @@ async function socketHandler(io) {
     });
     socket.on("rename_group", (data) => {
       const { groupId, updatedGroup, newMessage } = data;
-      io.emit("group_renamed", {
-        groupId: groupId,
+      socket.to(groupId).emit("group_renamed", {
         updatedGroup: updatedGroup,
         newMessage: newMessage,
       });
