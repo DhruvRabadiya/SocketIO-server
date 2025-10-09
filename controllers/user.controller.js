@@ -304,14 +304,18 @@ async function getGroupById(req, res) {
 }
 async function addUserInGroupChat(req, res) {
   const { groupId } = req.params;
-  const { userId } = req.body;
+  const { userIds, tempId } = req.body;
+  console.log(req.body);
   try {
-    if (!userId) {
-      return res.status(400).json({ message: "User ID is required." });
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "An array of userIds is required." });
     }
+
     const updatedGroup = await Groups.findByIdAndUpdate(
       groupId,
-      { $addToSet: { participants: userId } },
+      { $addToSet: { participants: { $each: userIds } } },
       { new: true }
     );
 
@@ -319,9 +323,21 @@ async function addUserInGroupChat(req, res) {
       return res.status(404).json({ message: "Group not found." });
     }
 
-    res
-      .status(200)
-      .json({ message: "User added successfully.", group: updatedGroup });
+    const addedUsers = await User.find({ _id: { $in: userIds } }, "username");
+    const addedUsernames = addedUsers.map((u) => u.username).join(", ");
+
+    const messageObj = {
+      conversationId: groupId,
+      senderId: req.user.id,
+      senderUsername: req.user.username,
+      text: `${req.user.username} added ${addedUsernames} to the group.`,
+      tempId: tempId,
+      isSystem: true,
+    };
+
+    const newMessage = await Messages.create(messageObj);
+
+    res.status(200).json({ updatedGroup, newMessage });
   } catch (error) {
     res.status(500).json({
       message: "An error occurred while adding the user.",
@@ -361,7 +377,7 @@ async function editGroupName(req, res) {
 }
 async function leaveGroup(req, res) {
   const groupId = req.params.groupId;
- const { tempId } = req.body;
+  const { tempId } = req.body;
   try {
     const groupDetail = await Groups.findOneAndUpdate(
       { _id: groupId },

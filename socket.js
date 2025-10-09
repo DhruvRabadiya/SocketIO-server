@@ -96,6 +96,24 @@ async function socketHandler(io) {
         newMessage: newMessage,
       });
     });
+    socket.on("add_members", (data) => {
+      const { groupId, updatedGroup, newMessage, addedUserIds } = data;
+
+      socket.to(groupId).emit("members_added", {
+        updatedGroup: updatedGroup,
+        newMessage: newMessage,
+      });
+      if (addedUserIds && Array.isArray(addedUserIds)) {
+        addedUserIds.forEach((userId) => {
+          const newMemberSocketId = onlineUsers.get(userId); 
+          if (newMemberSocketId) {
+            io.to(newMemberSocketId).emit("added_to_group", {
+              newGroup: updatedGroup,
+            });
+          }
+        });
+      }
+    });
     socket.on("leave_group", (data) => {
       const { groupId, newMessage, updatedGroup } = data;
 
