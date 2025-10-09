@@ -17,10 +17,15 @@ const {
   leaveGroup,
 } = require("../controllers/user.controller");
 const authCheck = require("../middlewares/authCheck");
+const validate = require("../middlewares/validation");
+const {
+  loginSchema,
+  registerSchema,
+} = require("../validations/userSchema.validations");
 const router = express.Router();
 
-router.post("/login", userLogin);
-router.post("/register", userRegister);
+router.post("/login", validate(loginSchema), userLogin);
+router.post("/register", validate(registerSchema), userRegister);
 router.get("/all", authCheck, getAllusers);
 router.get("/groups", authCheck, getGroups);
 router.post("/creategroup", authCheck, createGroup);
