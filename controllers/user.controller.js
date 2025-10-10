@@ -60,14 +60,18 @@ async function userRegister(req, res) {
         .json({ message: "User already exists, Please Login." });
     }
     const { token, hashPass } = await registerToken(email, password);
-    await User.insertOne({
+
+    const newUser = await User.create({
       username: username,
       email: email.toLowerCase(),
       password: hashPass,
     });
+
+    req.io.emit("new_user_registered", newUser);
+
     res
       .status(201)
-      .json({ token: token, message: "User Registerd successfully." });
+      .json({ token: token, message: "User Registered successfully." });
   } catch (error) {
     res
       .status(500)
@@ -229,20 +233,28 @@ async function editMessage(req, res) {
   }
 }
 async function createGroup(req, res) {
-  if (!req.body) {
-    return res.status(400).json({ data: "Body undefined." });
-  }
-  const { groupName, groupId, participants } = req.body;
-  const createdBy = req.user.id;
-  const groupObj = {
-    groupName: groupName,
-    groupId: groupId,
-    participants: participants,
-    createdBy: createdBy,
-  };
-  await Groups.create(groupObj);
-  res.status(200).json({ data: `${groupName} created successfully.` });
   try {
+    if (!req.body) {
+      return res.status(400).json({ data: "Body undefined." });
+    }
+    const { groupName, groupId, participants } = req.body;
+    const createdBy = req.user.id;
+    const groupObj = { groupName, groupId, participants, createdBy };
+
+    const newGroup = await Groups.create(groupObj);
+
+    if (newGroup && newGroup.participants) {
+      newGroup.participants.forEach((participantId) => {
+        const participantSocketId = req.onlineUsers.get(
+          participantId.toString()
+        );
+        if (participantSocketId) {
+          req.io.to(participantSocketId).emit("added_to_group", { newGroup });
+        }
+      });
+    }
+
+    res.status(200).json({ data: `${groupName} created successfully.` });
   } catch (error) {
     res
       .status(500)
@@ -305,7 +317,6 @@ async function getGroupById(req, res) {
 async function addUserInGroupChat(req, res) {
   const { groupId } = req.params;
   const { userIds, tempId } = req.body;
-  console.log(req.body);
   try {
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return res

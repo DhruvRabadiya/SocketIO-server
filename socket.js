@@ -1,7 +1,7 @@
 const { createRoom } = require("./controllers/user.controller");
 const jwt = require("jsonwebtoken");
+const onlineUsers = new Map();
 async function socketHandler(io) {
-  const onlineUsers = new Map();
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error("Authentication error"));
@@ -105,7 +105,7 @@ async function socketHandler(io) {
       });
       if (addedUserIds && Array.isArray(addedUserIds)) {
         addedUserIds.forEach((userId) => {
-          const newMemberSocketId = onlineUsers.get(userId); 
+          const newMemberSocketId = onlineUsers.get(userId);
           if (newMemberSocketId) {
             io.to(newMemberSocketId).emit("added_to_group", {
               newGroup: updatedGroup,
@@ -134,4 +134,4 @@ async function socketHandler(io) {
     });
   });
 }
-module.exports = socketHandler;
+module.exports = { socketHandler, onlineUsers };
