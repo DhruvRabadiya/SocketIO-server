@@ -99,6 +99,9 @@ async function getUserById(req, res) {
       { _id: userId },
       { password: 0, addedAt: 0, modifiedAt: 0 }
     );
+    if (user.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
     res.status(200).json({ user });
   } catch (error) {
     res
@@ -181,7 +184,7 @@ async function getAllMessageOfRoom(req, res) {
   try {
     const room = await Rooms.findOne({ roomName: roomName });
     if (!room) {
-      return res.status(200).json([]);
+      return res.status(404).json({ message: "Room does not exists!" });
     }
     const pipeline = [
       {
