@@ -430,22 +430,28 @@ async function leaveGroup(req, res) {
 }
 async function saveFcmToken(req, res) {
   try {
-    const { token } = req.body;
+    const { newFcmToken, oldFcmToken } = req.body;
     const userId = req.user.id;
 
-    if (!token) {
-      return res.status(400).json({ message: "Token is required." });
+    if (!newFcmToken) {
+      return res.status(400).json({ message: "New FCM token is required." });
+    }
+
+    if (oldFcmToken) {
+      await User.findByIdAndUpdate(userId, {
+        $pull: { fcmTokens: oldFcmToken },
+      });
     }
 
     await User.findByIdAndUpdate(userId, {
-      $addToSet: { fcmTokens: token },
+      $addToSet: { fcmTokens: newFcmToken },
     });
 
-    res.status(200).json({ message: "FCM token saved successfully." });
+    res.status(200).json({ message: "FCM token updated successfully." });
   } catch (error) {
     res
       .status(500)
-      .json({ message: "Failed to save FCM token", error: error.message });
+      .json({ message: "Failed to update FCM token", error: error.message });
   }
 }
 async function removeFcmToken(req, res) {
