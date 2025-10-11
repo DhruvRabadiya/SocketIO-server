@@ -5,12 +5,9 @@ const roomSchema = mongoose.Schema(
     roomName: { type: String, required: true, unique: true },
     participants: [
       {
-        userId: {
-          type: mongoose.Types.ObjectId,
-          required: true,
-          ref: "User",
-        },
-        _id: false,
+        type: mongoose.Types.ObjectId,
+        required: true,
+        ref: "User",
       },
     ],
   },

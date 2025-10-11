@@ -15,6 +15,8 @@ const {
   addUserInGroupChat,
   editGroupName,
   leaveGroup,
+  saveFcmToken,
+  removeFcmToken,
 } = require("../controllers/user.controller");
 const authCheck = require("../middlewares/authCheck");
 const validate = require("../middlewares/validation");
@@ -40,4 +42,6 @@ router.patch("/groupName/:groupId", authCheck, editGroupName);
 router.patch("/groups/:groupId/leave", authCheck, leaveGroup);
 router.patch("/delete/:messageId", authCheck, deleteMessage);
 router.patch("/edit/:messageId", authCheck, editMessage);
+router.post("/save-fcm-token", authCheck, saveFcmToken);
+router.post("/remove-fcm-token", authCheck, removeFcmToken);
 module.exports = router;

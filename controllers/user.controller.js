@@ -5,6 +5,7 @@ const { loginToken, registerToken } = require("../services/getToken.service");
 const Messages = require("../models/messages");
 const Groups = require("../models/group");
 const pagination = require("../utils/pagination");
+const sendNotification = require("../utils/sendNotification");
 
 async function userLogin(req, res) {
   if (!req.body) {
@@ -113,62 +114,72 @@ async function createRoom(roomName) {
   const [userId1, userId2] = roomName.split("-");
 
   try {
-    const doc = {
-      roomName: roomName,
-      participants: [
-        { userId: new mongoose.Types.ObjectId(userId1) },
-        { userId: new mongoose.Types.ObjectId(userId2) },
-      ],
-    };
-    const roomExists = await Rooms.findOne({ roomName: roomName }).populate(
-      "participants.userId",
-      "username"
-    );
+    const roomExists = await Rooms.findOne({ roomName: roomName });
 
-    if (roomExists) {
-      console.log("Room Exists!!!");
-    } else {
-      await Rooms.create(doc);
+    if (!roomExists) {
+      await Rooms.create({
+        roomName: roomName,
+        participants: [userId1, userId2],
+      });
     }
   } catch (error) {
     throw Error(error);
   }
 }
-// async function messages(msg) {
-//   try {
-//     const roomId = await Rooms.findOne({ roomName: msg.roomName });
-//     const messageObj = {
-//       conversationId: roomId._id,
-//       senderId: new mongoose.Types.ObjectId(msg.senderId),
-//       senderUsername: msg.senderUsername,
-//       text: msg.text,
-//       tempId: msg.tempId,
-//     };
-//     const savedMessage = await Messages.create(messageObj);
-//     return savedMessage;
-//   } catch (error) {
-//     throw Error(error);
-//   }
-// }
+
 async function sendMessage(req, res) {
   try {
     const senderId = req.user.id;
-    const { roomName, isGroupChat } = req.body;
+    const senderUsername = req.user.username;
+    const { roomName, isGroupChat, text, tempId } = req.body;
     let conversationId;
-    if (isGroupChat) {
-      const group = await Groups.findById(roomName);
-      conversationId = group._id;
-    } else {
-      const room = await Rooms.findOne({ roomName: roomName });
-      conversationId = room._id;
-    }
+    let conversation;
 
-    if (!conversationId) {
+    if (isGroupChat) {
+      conversation = await Groups.findById(roomName);
+    } else {
+      conversation = await Rooms.findOne({ roomName: roomName });
+    }
+    if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
-
-    const messageData = { ...req.body, senderId, conversationId };
+    conversationId = conversation._id;
+    const messageData = {
+      conversationId,
+      senderId,
+      senderUsername,
+      text,
+      tempId,
+      deliveredTo: [senderId],
+      readBy: [senderId],
+    };
     const savedMessage = await Messages.create(messageData);
+
+    // The logic is now simple because the schemas are the same.
+    const recipientIds = conversation.participants.filter(
+      (p) => p.toString() !== senderId
+    );
+
+    if (recipientIds.length > 0) {
+      const recipients = await User.find({ _id: { $in: recipientIds } }).select(
+        "fcmTokens"
+      );
+      const tokens = recipients.flatMap((r) => r.fcmTokens).filter(Boolean);
+
+      if (tokens.length > 0) {
+        const notificationTitle = isGroupChat
+          ? conversation.groupName
+          : senderUsername;
+        const notificationBody = text;
+
+        await sendNotification(tokens, notificationTitle, notificationBody, {
+          conversationId: conversationId.toString(),
+          type: isGroupChat ? "group" : "dm",
+          senderId: senderId,
+        });
+      }
+    }
+
     res.status(201).json({ savedMessage });
   } catch (error) {
     res
@@ -417,13 +428,50 @@ async function leaveGroup(req, res) {
     });
   }
 }
+async function saveFcmToken(req, res) {
+  try {
+    const { token } = req.body;
+    const userId = req.user.id;
+
+    if (!token) {
+      return res.status(400).json({ message: "Token is required." });
+    }
+
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { fcmTokens: token },
+    });
+
+    res.status(200).json({ message: "FCM token saved successfully." });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Failed to save FCM token", error: error.message });
+  }
+}
+async function removeFcmToken(req, res) {
+  try {
+    const { token } = req.body;
+    const userId = req.user.id;
+    if (!token) {
+      return res.status(400).json({ message: "Token is required." });
+    }
+    // Use $pull to remove the specific token from the fcmTokens array
+    await User.findByIdAndUpdate(userId, {
+      $pull: { fcmTokens: token },
+    });
+    res.status(200).json({ message: "FCM token removed successfully." });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Failed to remove FCM token", error: error.message });
+  }
+}
 module.exports = {
   userLogin,
   userRegister,
   getAllusers,
   getUserById,
   createRoom,
-  // messages,
   getAllMessageOfRoom,
   deleteMessage,
   editMessage,
@@ -435,4 +483,6 @@ module.exports = {
   addUserInGroupChat,
   editGroupName,
   leaveGroup,
+  saveFcmToken,
+  removeFcmToken,
 };
