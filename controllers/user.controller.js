@@ -172,7 +172,9 @@ async function sendMessage(req, res) {
           : senderUsername;
         const notificationBody = text;
 
-        await sendNotification(tokens, notificationTitle, notificationBody, {
+        await sendNotification(tokens, {
+          title: notificationTitle,
+          body: notificationBody,
           conversationId: conversationId.toString(),
           type: isGroupChat ? "group" : "dm",
           senderId: senderId,

@@ -26,16 +26,18 @@ async function socketHandler(io) {
       socket.broadcast.emit("chat", msg);
     });
     socket.on("join_private_chat", async function (data) {
-      const { roomName } = data;
+      const { roomName, isGroupChat } = data;
       socket.join(roomName);
-      try {
-        await createRoom(roomName);
-        socket.emit("room_created", `Joined room ${roomName}`);
-      } catch (error) {
-        console.error(`Error creating room: ${error.message}`);
-        socket.emit("error", {
-          message: "Failed to create room. Please try again.",
-        });
+      if (!isGroupChat) {
+        try {
+          await createRoom(roomName);
+          socket.emit("room_created", `Joined room ${roomName}`);
+        } catch (error) {
+          console.error(`Error creating room: ${error.message}`);
+          socket.emit("error", {
+            message: "Failed to create or join room. Please try again.",
+          });
+        }
       }
     });
 

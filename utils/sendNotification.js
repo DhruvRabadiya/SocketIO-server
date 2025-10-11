@@ -1,10 +1,9 @@
 const { messaging } = require("../config/firebase");
 
-async function sendNotification(tokens, title, body, data = {}) {
+async function sendNotification(tokens, dataPayload = {}) {
   try {
     const payload = {
-      notification: { title, body },
-      data,
+      data: dataPayload,
     };
 
     let response;
