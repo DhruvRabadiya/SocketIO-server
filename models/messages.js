@@ -5,7 +5,12 @@ const messagesSchema = mongoose.Schema(
     conversationId: {
       type: mongoose.Types.ObjectId,
       required: true,
-      ref: "Room",
+      refPath: "onModel",
+    },
+    onModel: {
+      type: String,
+      required: true,
+      enum: ["Room", "Group"],
     },
     senderId: {
       type: mongoose.Types.ObjectId,
@@ -29,6 +34,18 @@ const messagesSchema = mongoose.Schema(
       type: String,
       unique: true,
     },
+    deliveredTo: [
+      {
+        type: mongoose.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    readBy: [
+      {
+        type: mongoose.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   {
     timestamps: {
