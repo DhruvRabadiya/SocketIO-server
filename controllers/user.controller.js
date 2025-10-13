@@ -43,6 +43,7 @@ async function userLogin(req, res) {
     res.status(500).json({ message: error.message });
   }
 }
+
 async function userRegister(req, res) {
   if (!req.body) {
     return res.status(400).json({ message: "Body undefined." });
@@ -79,20 +80,109 @@ async function userRegister(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function getAllusers(req, res) {
-  const loginUserId = req.user.id;
+  const loginUserId = new mongoose.Types.ObjectId(req.user.id);
   try {
-    const getAllusers = await User.find(
-      { _id: { $ne: loginUserId } },
-      { password: 0, addedAt: 0, modifiedAt: 0 }
-    );
-    res.status(200).json({ getAllusers });
+    const usersWithLastMessage = await User.aggregate([
+      { $match: { _id: { $ne: loginUserId } } },
+      {
+        $lookup: {
+          from: "rooms",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  // FIX: Check if participants array exists before using $in
+                  $and: [
+                    {
+                      $cond: [
+                        { $isArray: "$participants" },
+                        { $in: ["$$userId", "$participants"] },
+                        false,
+                      ],
+                    },
+                    {
+                      $cond: [
+                        { $isArray: "$participants" },
+                        { $in: [loginUserId, "$participants"] },
+                        false,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+          as: "room",
+        },
+      },
+      { $unwind: { path: "$room", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "messages",
+          let: { roomId: "$room._id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$conversationId", "$$roomId"] } } },
+            { $sort: { addedAt: -1 } },
+            { $limit: 1 },
+          ],
+          as: "lastMessage",
+        },
+      },
+      {
+        $lookup: {
+          from: "messages",
+          let: { roomId: "$room._id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$conversationId", "$$roomId"] },
+                    // FIX: Check if readBy array exists before using $in
+                    {
+                      $cond: [
+                        { $isArray: "$readBy" },
+                        { $not: { $in: [loginUserId, "$readBy"] } },
+                        false,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+          as: "unreadMessages",
+        },
+      },
+      {
+        $addFields: {
+          lastMessage: { $arrayElemAt: ["$lastMessage", 0] },
+          unreadCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.count", 0] }, 0],
+          },
+        },
+      },
+      {
+        $project: {
+          username: 1,
+          email: 1,
+          lastMessage: 1,
+          unreadCount: 1,
+        },
+      },
+    ]);
+    res.status(200).json({ getAllusers: usersWithLastMessage });
   } catch (error) {
     res
       .status(500)
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function getUserById(req, res) {
   const userId = req.params.id;
   try {
@@ -110,6 +200,7 @@ async function getUserById(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function createRoom(roomName) {
   const [userId1, userId2] = roomName.split("-");
 
@@ -129,23 +220,29 @@ async function createRoom(roomName) {
 
 async function sendMessage(req, res) {
   try {
-    const senderId = req.user.id;
+    const senderId = new mongoose.Types.ObjectId(req.user.id);
     const senderUsername = req.user.username;
     const { roomName, isGroupChat, text, tempId } = req.body;
     let conversationId;
     let conversation;
+    let onModel;
 
     if (isGroupChat) {
       conversation = await Groups.findById(roomName);
+      onModel = "Group";
     } else {
       conversation = await Rooms.findOne({ roomName: roomName });
+      onModel = "Room";
     }
+
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
     conversationId = conversation._id;
+
     const messageData = {
       conversationId,
+      onModel,
       senderId,
       senderUsername,
       text,
@@ -153,17 +250,32 @@ async function sendMessage(req, res) {
       deliveredTo: [senderId],
       readBy: [senderId],
     };
+
     const savedMessage = await Messages.create(messageData);
 
-    // The logic is now simple because the schemas are the same.
-    const recipientIds = conversation.participants.filter(
-      (p) => p.toString() !== senderId
+    const recipientIds = conversation.participants;
+    if (recipientIds && recipientIds.length > 0) {
+      recipientIds.forEach((userId) => {
+        const userSocketId = req.onlineUsers.get(userId.toString());
+        if (userSocketId) {
+          req.io.to(userSocketId).emit("new_last_message", {
+            conversationId: isGroupChat
+              ? conversation._id.toString()
+              : roomName,
+            message: savedMessage,
+          });
+        }
+      });
+    }
+
+    const otherRecipientIds = conversation.participants.filter(
+      (p) => p.toString() !== senderId.toString()
     );
 
-    if (recipientIds.length > 0) {
-      const recipients = await User.find({ _id: { $in: recipientIds } }).select(
-        "fcmTokens"
-      );
+    if (otherRecipientIds.length > 0) {
+      const recipients = await User.find({
+        _id: { $in: otherRecipientIds },
+      }).select("fcmTokens");
       const tokens = recipients.flatMap((r) => r.fcmTokens).filter(Boolean);
 
       if (tokens.length > 0) {
@@ -177,7 +289,7 @@ async function sendMessage(req, res) {
           body: notificationBody,
           conversationId: conversationId.toString(),
           type: isGroupChat ? "group" : "dm",
-          senderId: senderId,
+          senderId: senderId.toString(),
         });
       }
     }
@@ -189,6 +301,7 @@ async function sendMessage(req, res) {
       .json({ message: "Failed to send message", error: error.message });
   }
 }
+
 async function getAllMessageOfRoom(req, res) {
   const roomName = req.params.name;
   const pageNo = Number(req.query.pageNo);
@@ -219,6 +332,7 @@ async function getAllMessageOfRoom(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function deleteMessage(req, res) {
   const messageId = req.params.messageId;
   try {
@@ -233,6 +347,7 @@ async function deleteMessage(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function editMessage(req, res) {
   const messageId = req.params.messageId;
   const editedText = req.body.text;
@@ -248,6 +363,7 @@ async function editMessage(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function createGroup(req, res) {
   try {
     if (!req.body) {
@@ -277,13 +393,60 @@ async function createGroup(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function getGroups(req, res) {
-  const userId = req.user.id;
+  const userId = new mongoose.Types.ObjectId(req.user.id);
   try {
-    if (!userId) {
-      return res.status(400).json({ data: "User not found." });
-    }
-    const groups = await Groups.find({ participants: userId });
+    const groups = await Groups.aggregate([
+      { $match: { participants: userId } },
+      {
+        $lookup: {
+          from: "messages",
+          let: { groupId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$conversationId", "$$groupId"] } } },
+            { $sort: { addedAt: -1 } },
+            { $limit: 1 },
+          ],
+          as: "lastMessage",
+        },
+      },
+      {
+        $lookup: {
+          from: "messages",
+          let: { groupId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$conversationId", "$$groupId"] },
+                    // FIX: Check if readBy array exists before using $in
+                    {
+                      $cond: [
+                        { $isArray: "$readBy" },
+                        { $not: { $in: [userId, "$readBy"] } },
+                        false,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+          as: "unreadMessages",
+        },
+      },
+      {
+        $addFields: {
+          lastMessage: { $arrayElemAt: ["$lastMessage", 0] },
+          unreadCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.count", 0] }, 0],
+          },
+        },
+      },
+    ]);
     res.status(200).json({ groups });
   } catch (error) {
     res
@@ -291,6 +454,7 @@ async function getGroups(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function getAllGroupMessage(req, res) {
   const groupId = req.params.groupId;
   const pageNo = Number(req.query.pageNo);
@@ -316,6 +480,7 @@ async function getAllGroupMessage(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function getGroupById(req, res) {
   const groupId = req.params.groupId;
   try {
@@ -330,6 +495,7 @@ async function getGroupById(req, res) {
       .json({ message: "Some error occured", error: error.message });
   }
 }
+
 async function addUserInGroupChat(req, res) {
   const { groupId } = req.params;
   const { userIds, tempId } = req.body;
@@ -355,6 +521,7 @@ async function addUserInGroupChat(req, res) {
 
     const messageObj = {
       conversationId: groupId,
+      onModel: "Group",
       senderId: req.user.id,
       senderUsername: req.user.username,
       text: `${req.user.username} added ${addedUsernames} to the group.`,
@@ -372,6 +539,7 @@ async function addUserInGroupChat(req, res) {
     });
   }
 }
+
 async function editGroupName(req, res) {
   const groupId = req.params.groupId;
   const { groupName, tempId } = req.body;
@@ -387,6 +555,7 @@ async function editGroupName(req, res) {
 
     const messageObj = {
       conversationId: groupId,
+      onModel: "Group",
       senderId: req.user.id,
       senderUsername: req.user.username,
       text: `${req.user.username} change group name to ${groupName}`,
@@ -402,6 +571,7 @@ async function editGroupName(req, res) {
     });
   }
 }
+
 async function leaveGroup(req, res) {
   const groupId = req.params.groupId;
   const { tempId } = req.body;
@@ -416,6 +586,7 @@ async function leaveGroup(req, res) {
     }
     const messageObj = {
       conversationId: groupId,
+      onModel: "Group",
       senderId: req.user.id,
       senderUsername: req.user.username,
       text: `${req.user.username} has left the group.`,
@@ -430,6 +601,7 @@ async function leaveGroup(req, res) {
     });
   }
 }
+
 async function saveFcmToken(req, res) {
   try {
     const { newFcmToken, oldFcmToken } = req.body;
@@ -456,6 +628,7 @@ async function saveFcmToken(req, res) {
       .json({ message: "Failed to update FCM token", error: error.message });
   }
 }
+
 async function removeFcmToken(req, res) {
   try {
     const { token } = req.body;
@@ -463,7 +636,6 @@ async function removeFcmToken(req, res) {
     if (!token) {
       return res.status(400).json({ message: "Token is required." });
     }
-    // Use $pull to remove the specific token from the fcmTokens array
     await User.findByIdAndUpdate(userId, {
       $pull: { fcmTokens: token },
     });
@@ -474,6 +646,7 @@ async function removeFcmToken(req, res) {
       .json({ message: "Failed to remove FCM token", error: error.message });
   }
 }
+
 module.exports = {
   userLogin,
   userRegister,
