@@ -43,13 +43,11 @@ async function socketHandler(io) {
     });
 
     socket.on("edit_message", (messageObj) => {
-      socket
-        .to(messageObj.roomName)
-        .emit("message_edited", {
-          messageId: messageObj.messageId,
-          newText: messageObj.newText,
-          isEdited: true,
-        });
+      socket.to(messageObj.roomName).emit("message_edited", {
+        messageId: messageObj.messageId,
+        newText: messageObj.newText,
+        isEdited: true,
+      });
     });
 
     socket.on("start_typing", (data) => {
@@ -69,21 +67,17 @@ async function socketHandler(io) {
     });
 
     socket.on("rename_group", (data) => {
-      socket
-        .to(data.groupId)
-        .emit("group_renamed", {
-          updatedGroup: data.updatedGroup,
-          newMessage: data.newMessage,
-        });
+      socket.to(data.groupId).emit("group_renamed", {
+        updatedGroup: data.updatedGroup,
+        newMessage: data.newMessage,
+      });
     });
 
     socket.on("add_members", (data) => {
-      socket
-        .to(data.groupId)
-        .emit("members_added", {
-          updatedGroup: data.updatedGroup,
-          newMessage: data.newMessage,
-        });
+      socket.to(data.groupId).emit("members_added", {
+        updatedGroup: data.updatedGroup,
+        newMessage: data.newMessage,
+      });
       if (data.addedUserIds && Array.isArray(data.addedUserIds)) {
         data.addedUserIds.forEach((userId) => {
           const newMemberSocketId = onlineUsers.get(userId);
@@ -97,12 +91,10 @@ async function socketHandler(io) {
     });
 
     socket.on("leave_group", (data) => {
-      socket
-        .to(data.groupId)
-        .emit("member_left", {
-          updatedGroup: data.updatedGroup,
-          newMessage: data.newMessage,
-        });
+      socket.to(data.groupId).emit("member_left", {
+        updatedGroup: data.updatedGroup,
+        newMessage: data.newMessage,
+      });
     });
 
     socket.on("message_delivered", async (data) => {
@@ -129,18 +121,12 @@ async function socketHandler(io) {
       const { conversationId, userId } = data;
       try {
         let finalConversationId;
-        let originalConversationIdForEmit;
-
         if (mongoose.Types.ObjectId.isValid(conversationId)) {
           finalConversationId = conversationId;
-          originalConversationIdForEmit = conversationId;
         } else {
           const room = await Rooms.findOne({ roomName: conversationId });
           if (room) {
             finalConversationId = room._id;
-            originalConversationIdForEmit = room.participants
-              .find((p) => p.toString() !== userId)
-              .toString();
           } else {
             return;
           }
@@ -150,24 +136,11 @@ async function socketHandler(io) {
           { conversationId: finalConversationId, readBy: { $ne: userId } },
           { $addToSet: { readBy: userId } }
         );
-        const messages = await Messages.find({
-          conversationId: finalConversationId,
-        });
-        const senderIds = [
-          ...new Set(messages.map((m) => m.senderId.toString())),
-        ];
 
-        for (const senderId of senderIds) {
-          if (senderId !== userId) {
-            const senderSocketId = onlineUsers.get(senderId);
-            if (senderSocketId) {
-              io.to(senderSocketId).emit("conversation_read_by_user", {
-                conversationId: originalConversationIdForEmit,
-                readByUserId: userId,
-              });
-            }
-          }
-        }
+        io.to(conversationId).emit("conversation_has_been_read", {
+          conversationId: conversationId,
+          readByUserId: userId,
+        });
       } catch (error) {
         console.error("Error updating messages read status:", error);
       }
