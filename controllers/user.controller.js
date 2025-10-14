@@ -223,7 +223,6 @@ async function sendMessage(req, res) {
     const senderId = new mongoose.Types.ObjectId(req.user.id);
     const senderUsername = req.user.username;
     const { roomName, isGroupChat, text, tempId } = req.body;
-    let conversationId;
     let conversation;
     let onModel;
 
@@ -238,7 +237,7 @@ async function sendMessage(req, res) {
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
-    conversationId = conversation._id;
+    const conversationId = conversation._id;
 
     const messageData = {
       conversationId,
@@ -253,29 +252,23 @@ async function sendMessage(req, res) {
 
     const savedMessage = await Messages.create(messageData);
 
-    const recipientIds = conversation.participants;
-    if (recipientIds && recipientIds.length > 0) {
-      recipientIds.forEach((userId) => {
-        const userSocketId = req.onlineUsers.get(userId.toString());
-        if (userSocketId) {
-          req.io.to(userSocketId).emit("new_last_message", {
-            conversationId: isGroupChat
-              ? conversation._id.toString()
-              : roomName,
-            message: savedMessage,
-          });
-        }
-      });
-    }
-
-    const otherRecipientIds = conversation.participants.filter(
-      (p) => p.toString() !== senderId.toString()
+    const allParticipantIds = conversation.participants.map((p) =>
+      p.toString()
     );
-
-    if (otherRecipientIds.length > 0) {
+    allParticipantIds.forEach((userId) => {
+      const userSocketId = req.onlineUsers.get(userId);
+      if (userSocketId) {
+        req.io.to(userSocketId).emit("new_last_message", {
+          conversationId: isGroupChat ? conversation._id.toString() : roomName,
+          message: savedMessage,
+        });
+      }
+    });
+    if (conversation.participants && conversation.participants.length > 1) {
       const recipients = await User.find({
-        _id: { $in: otherRecipientIds },
+        _id: { $in: conversation.participants, $ne: senderId },
       }).select("fcmTokens");
+
       const tokens = recipients.flatMap((r) => r.fcmTokens).filter(Boolean);
 
       if (tokens.length > 0) {
@@ -284,13 +277,19 @@ async function sendMessage(req, res) {
           : senderUsername;
         const notificationBody = text;
 
-        await sendNotification(tokens, {
+        const notificationPayload = {
           title: notificationTitle,
           body: notificationBody,
           conversationId: conversationId.toString(),
           type: isGroupChat ? "group" : "dm",
           senderId: senderId.toString(),
-        });
+        };
+
+        if (!isGroupChat) {
+          notificationPayload.roomName = roomName;
+        }
+
+        await sendNotification(tokens, notificationPayload);
       }
     }
 
@@ -301,7 +300,6 @@ async function sendMessage(req, res) {
       .json({ message: "Failed to send message", error: error.message });
   }
 }
-
 async function getAllMessageOfRoom(req, res) {
   const roomName = req.params.name;
   const pageNo = Number(req.query.pageNo);
@@ -646,6 +644,47 @@ async function removeFcmToken(req, res) {
       .json({ message: "Failed to remove FCM token", error: error.message });
   }
 }
+async function markConversationAsRead(req, res) {
+  const { conversationId } = req.body;
+  const userId = new mongoose.Types.ObjectId(req.user.id);
+
+  if (!conversationId) {
+    return res.status(400).json({ message: "Conversation ID is required." });
+  }
+
+  try {
+    let finalConversationId;
+    let roomNameForEmit = conversationId;
+
+    if (mongoose.Types.ObjectId.isValid(conversationId)) {
+      finalConversationId = conversationId;
+    } else {
+      const room = await Rooms.findOne({ roomName: conversationId });
+      if (room) {
+        finalConversationId = room._id;
+      } else {
+        return res.status(404).json({ message: "Chat room not found." });
+      }
+    }
+
+    await Messages.updateMany(
+      { conversationId: finalConversationId, readBy: { $ne: userId } },
+      { $addToSet: { readBy: userId } }
+    );
+
+    // Notify the user's other devices or senders that the chat has been read
+    req.io.to(roomNameForEmit).emit("conversation_has_been_read", {
+      conversationId: roomNameForEmit,
+      readByUserId: userId.toString(),
+    });
+
+    res.status(200).json({ message: "Conversation marked as read." });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Failed to mark as read.", error: error.message });
+  }
+}
 
 module.exports = {
   userLogin,
@@ -666,4 +705,5 @@ module.exports = {
   leaveGroup,
   saveFcmToken,
   removeFcmToken,
+  markConversationAsRead,
 };

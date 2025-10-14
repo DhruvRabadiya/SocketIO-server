@@ -10,6 +10,7 @@ async function sendNotification(tokens, dataPayload = {}) {
 
     if (Array.isArray(tokens)) {
       if (tokens.length === 0) return;
+      const uniqueTokens = [...new Set(tokens)];
       response = await messaging.sendEachForMulticast({
         tokens: tokens,
         ...payload,

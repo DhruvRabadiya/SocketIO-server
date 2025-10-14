@@ -17,6 +17,7 @@ const {
   leaveGroup,
   saveFcmToken,
   removeFcmToken,
+  markConversationAsRead,
 } = require("../controllers/user.controller");
 const authCheck = require("../middlewares/authCheck");
 const validate = require("../middlewares/validation");
@@ -37,6 +38,7 @@ router.get("/roomname/:name", authCheck, getAllMessageOfRoom);
 router.get("/group/messages/:groupId", authCheck, getAllGroupMessage);
 router.get("/group/details/:groupId", authCheck, getGroupById);
 router.patch("/group/add/:groupId", authCheck, addUserInGroupChat);
+router.post("/mark-as-read", authCheck, markConversationAsRead)
 router.get("/:id", authCheck, getUserById);
 router.patch("/groupName/:groupId", authCheck, editGroupName);
 router.patch("/groups/:groupId/leave", authCheck, leaveGroup);
