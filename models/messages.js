@@ -46,6 +46,17 @@ const messagesSchema = mongoose.Schema(
         ref: "User",
       },
     ],
+    messageType: {
+      type: String,
+      default: "text", 
+      enum: ["text", "image", "video", "file"],
+    },
+    fileUrl: {
+      type: String,
+    },
+    fileName: {
+      type: String, 
+    },
   },
   {
     timestamps: {

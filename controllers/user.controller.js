@@ -6,7 +6,8 @@ const Messages = require("../models/messages");
 const Groups = require("../models/group");
 const pagination = require("../utils/pagination");
 const sendNotification = require("../utils/sendNotification");
-
+const fs = require("fs");
+const cloudinary = require("cloudinary");
 async function userLogin(req, res) {
   if (!req.body) {
     return res.status(400).json({ message: "Body Undefined." });
@@ -222,10 +223,17 @@ async function sendMessage(req, res) {
   try {
     const senderId = new mongoose.Types.ObjectId(req.user.id);
     const senderUsername = req.user.username;
-    const { roomName, isGroupChat, text, tempId } = req.body;
+    const {
+      roomName,
+      isGroupChat,
+      text,
+      tempId,
+      messageType,
+      fileUrl,
+      fileName,
+    } = req.body;
     let conversation;
     let onModel;
-
     if (isGroupChat) {
       conversation = await Groups.findById(roomName);
       onModel = "Group";
@@ -233,25 +241,44 @@ async function sendMessage(req, res) {
       conversation = await Rooms.findOne({ roomName: roomName });
       onModel = "Room";
     }
-
-    if (!conversation) {
+    if (!conversation)
       return res.status(404).json({ message: "Conversation not found" });
-    }
     const conversationId = conversation._id;
-
     const messageData = {
       conversationId,
       onModel,
       senderId,
       senderUsername,
-      text,
       tempId,
       deliveredTo: [senderId],
       readBy: [senderId],
+      messageType: messageType || "text",
     };
-
+    let notificationBody;
+    if (messageData.messageType === "text") {
+      if (!text) return res.status(400).json({ message: "Text is required." });
+      messageData.text = text;
+      notificationBody = text;
+    } else {
+      if (!fileUrl || !fileName)
+        return res
+          .status(400)
+          .json({ message: "File URL and name are required." });
+      messageData.fileUrl = fileUrl;
+      messageData.fileName = fileName;
+      if (messageType === "image") {
+        messageData.text = "📷 Image";
+        notificationBody = "📷 Sent an image";
+      } else if (messageType === "video") {
+        messageData.text = "🎥 Video";
+        notificationBody = "🎥 Sent a video";
+      } else {
+        messageData.text = `📄 ${fileName}`;
+        notificationBody = `📄 Sent a file: ${fileName}`;
+      }
+    }
     const savedMessage = await Messages.create(messageData);
-
+    
     const allParticipantIds = conversation.participants.map((p) =>
       p.toString()
     );
@@ -268,15 +295,11 @@ async function sendMessage(req, res) {
       const recipients = await User.find({
         _id: { $in: conversation.participants, $ne: senderId },
       }).select("fcmTokens");
-
       const tokens = recipients.flatMap((r) => r.fcmTokens).filter(Boolean);
-
       if (tokens.length > 0) {
         const notificationTitle = isGroupChat
           ? conversation.groupName
           : senderUsername;
-        const notificationBody = text;
-
         const notificationPayload = {
           title: notificationTitle,
           body: notificationBody,
@@ -284,15 +307,12 @@ async function sendMessage(req, res) {
           type: isGroupChat ? "group" : "dm",
           senderId: senderId.toString(),
         };
-
         if (!isGroupChat) {
           notificationPayload.roomName = roomName;
         }
-
         await sendNotification(tokens, notificationPayload);
       }
     }
-
     res.status(201).json({ savedMessage });
   } catch (error) {
     res
@@ -685,6 +705,29 @@ async function markConversationAsRead(req, res) {
       .json({ message: "Failed to mark as read.", error: error.message });
   }
 }
+async function uploadFile(req, res) {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded." });
+    }
+
+    const uploadedFiles = req.files.map((file) => ({
+      fileUrl: file.path,
+      fileName: file.originalname,
+      fileType: file.mimetype,
+    }));
+
+    res.status(200).json({
+      message: "Files uploaded successfully!",
+      files: uploadedFiles,
+    });
+  } catch (error) {
+    console.error("❌ Upload processing failed:", error);
+    res
+      .status(500)
+      .json({ message: "File upload failed.", error: error.message });
+  }
+}
 
 module.exports = {
   userLogin,
@@ -706,4 +749,5 @@ module.exports = {
   saveFcmToken,
   removeFcmToken,
   markConversationAsRead,
+  uploadFile,
 };
